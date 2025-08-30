@@ -17,10 +17,15 @@ def create_appointment():
         
         # Validation des données requises
         required_fields = ['service_type', 'service_price', 'appointment_date', 
-                          'appointment_time', 'vehicle_type', 'address', 'phone']
+                          'appointment_time', 'vehicle_type', 'address']
         for field in required_fields:
             if field not in data or not data[field]:
                 return jsonify({'error': f'Le champ {field} est requis'}), 400
+        
+        # Récupérer les informations de l'utilisateur connecté
+        user = User.query.get(session['user_id'])
+        if not user:
+            return jsonify({'error': 'Utilisateur non trouvé'}), 404
         
         # Créer le rendez-vous
         appointment = Appointment(
@@ -33,7 +38,7 @@ def create_appointment():
             vehicle_brand=data.get('vehicle_brand', ''),
             vehicle_model=data.get('vehicle_model', ''),
             address=data['address'],
-            phone=data['phone'],
+            phone=user.phone,  # Utiliser le téléphone de l'utilisateur connecté
             notes=data.get('notes', ''),
             status='pending'
         )
@@ -52,20 +57,32 @@ def create_appointment():
 
 @appointment_bp.route('/appointments', methods=['GET'])
 def get_appointments():
-    """Récupérer les rendez-vous de l'utilisateur connecté"""
+    """Récupérer tous les rendez-vous (admin seulement)"""
     try:
         if 'user_id' not in session:
             return jsonify({'error': 'Utilisateur non connecté'}), 401
         
         user = User.query.get(session['user_id'])
-        if not user:
-            return jsonify({'error': 'Utilisateur non trouvé'}), 404
+        if not user or not user.is_admin:
+            return jsonify({'error': 'Accès non autorisé'}), 403
         
-        # Si admin, récupérer tous les rendez-vous
-        if user.is_admin:
-            appointments = Appointment.query.order_by(Appointment.appointment_date.desc()).all()
-        else:
-            appointments = Appointment.query.filter_by(user_id=session['user_id']).order_by(Appointment.appointment_date.desc()).all()
+        appointments = Appointment.query.order_by(Appointment.appointment_date.desc()).all()
+        
+        return jsonify({
+            'appointments': [appointment.to_dict() for appointment in appointments]
+        }), 200
+        
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@appointment_bp.route('/appointments/user', methods=['GET'])
+def get_user_appointments():
+    """Récupérer les rendez-vous de l'utilisateur connecté"""
+    try:
+        if 'user_id' not in session:
+            return jsonify({'error': 'Utilisateur non connecté'}), 401
+        
+        appointments = Appointment.query.filter_by(user_id=session['user_id']).order_by(Appointment.appointment_date.desc()).all()
         
         return jsonify({
             'appointments': [appointment.to_dict() for appointment in appointments]
